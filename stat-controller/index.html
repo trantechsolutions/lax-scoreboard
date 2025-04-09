@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Lacrosse Scoreboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        h2,
+        h4 {
+            font-size: 2rem;
+        }
+
+        .score-display {
+            font-size: 5rem;
+            font-weight: bold;
+            background-color: #212529;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 1rem;
+            box-shadow: inset 0 -4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+
+        .clock-display {
+            font-size: 5rem;
+            font-weight: 700;
+        }
+
+        .shot-clock-seconds {
+            font-size: 5rem;
+            font-weight: 700;
+            color: #dc3545;
+        }
+
+        .sticky-topbar {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 1000;
+            padding: 1rem 0;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .penalty-badge {
+            font-size: 0.9rem;
+        }
+
+        .editable {
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .penalty-form {
+            padding: 1rem;
+            background-color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+
+        .penalty-form .form-control {
+            margin-bottom: 10px;
+        }
+
+        .penalty-form .btn {
+            width: 100%;
+        }
+
+        .penalty-header {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .penalty-badge {
+            margin-left: 10px;
+        }
+
+        .toggle-btn {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" class="container-fluid py-3">
+
+        <!-- Sticky Header for Game Clock and Quarter -->
+        <div class="row sticky-topbar text-center mb-4">
+            <div class="col-4">
+                <div>Quarter</div>
+                <div class="clock-display">{{ quarter }}</div>
+            </div>
+            <div class="col-4">
+                <div>Game Clock</div>
+                <div class="clock-display">
+                    <span>{{ formatTime(gameClock) }}</span>
+                </div>
+            </div>
+            <div class="col-4">
+                <div>Shot Clock</div>
+                <div class="shot-clock-seconds">
+                    <span>{{ shotClock }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Score and Penalties Section -->
+        <div class="row text-center align-items-start mb-4">
+            <!-- Home Team -->
+            <div class="col-6 border-end">
+                <h4><i class="bi bi-house-fill me-2"></i>
+                    <span>{{ home }}</span>
+                </h4>
+                <div class="score-display bg-dark text-white rounded py-3 mb-3">{{ score.home }}</div>
+                <div class="mb-2"><i class="bi bi-hourglass-split me-1"></i>Timeouts: {{ timeouts.home }}</div>
+            </div>
+
+            <!-- Away Team -->
+            <div class="col-6">
+                <h4><i class="bi bi-house-fill me-2"></i>
+                    <span>{{ away }}</span>
+                </h4>
+                <div class="score-display bg-dark text-white rounded py-3 mb-3">{{ score.away }}</div>
+                <div class="mb-2"><i class="bi bi-hourglass-split me-1"></i>Timeouts: {{ timeouts.away }}</div>
+            </div>
+        </div>
+
+        <!-- Add Penalty -->
+        <div class="penalty-form mb-4">
+            <h4 class="penalty-header text-center">Add Stat</h4>
+            <div class="row g-2">
+                <div class="col-4">
+                    <input type="text" class="form-control form-control-sm" v-model="newPlayerStat.player"
+                        placeholder="Player #" />
+                </div>
+                <div class="col-6 offset-2">
+                    <div class="btn-group btn-group-sm w-100">
+                        <button class="btn btn-outline-primary" :class="{active: newPlayerStat.team === 'home'}"
+                            @click="newPlayerStat.team = 'home'">Home</button>
+                        <button class="btn btn-outline-primary" :class="{active: newPlayerStat.team === 'away'}"
+                            @click="newPlayerStat.team = 'away'">Away</button>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="btn-group btn-group-sm w-100">
+                        <button class="btn btn-outline-success" :class="{active: newPlayerStat.type === 'goal'}" @click="newPlayerStat.type = 'goal'">Goal</button>
+                        <button class="btn btn-outline-success" :class="{active: newPlayerStat.type === 'assist'}" @click="newPlayerStat.type = 'assist'">Assist</button>
+                        <button class="btn btn-outline-success" :class="{active: newPlayerStat.type === 'shot'}" @click="newPlayerStat.type = 'shot'">Shot</button>
+                        <button class="btn btn-outline-success" :class="{active: newPlayerStat.type === 'shotOnGoal'}" @click="newPlayerStat.type = 'shotOnGoal'">Shot On</button>                    
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="btn-group btn-group-sm w-100">
+                        <button class="btn btn-outline-dark" :class="{active: newPlayerStat.type === 'groundBall'}" @click="newPlayerStat.type = 'groundBall'">Ground Ball</button>
+                        <button class="btn btn-outline-dark" :class="{active: newPlayerStat.type === 'causedTO'}" @click="newPlayerStat.type = 'causedTO'">Caused TO</button>
+                        <button class="btn btn-outline-dark" :class="{active: newPlayerStat.type === 'save'}" @click="newPlayerStat.type = 'save'">Save</button>
+                        <button class="btn btn-outline-dark" :class="{active: newPlayerStat.type === 'faceOff'}" @click="newPlayerStat.type = 'faceOff'">Face Off</button>
+                        <button class="btn btn-outline-dark" :class="{active: newPlayerStat.type === 'faceOffWin'}" @click="newPlayerStat.type = 'faceOffWin'">FO Win</button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="col-6 offset-3">
+                    <button class="btn btn-primary" @click="addPlayerStat">Add Player Stat</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expired Penalties -->
+        <div class="penalty-form mb-4">
+            <h5 class="text-center">Player Stats</h5>
+            <ul class="list-group" v-if="playerStats">
+                <li v-for="(p, i) in playerStats" :key="i" class="list-group-item">
+                    {{ p.team }} - #{{ p.player }} | {{ p.type }} | Occurance: {{ formatTime(p.gameClock) }} <button class="btn btn-sm btn-outline-danger float-end" @click="removePlayerStat(i)">X</button>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Export Data -->
+        <div class="my-5">
+            <button class="btn btn-outline-secondary float-end" @click="clearPlayerStat">Clear Player Stats</button>
+        </div>
+        <div class="my-5">
+            <button class="btn btn-outline-secondary float-end me-2" @click="exportData">Export Data</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3.2.45/dist/vue.global.prod.js"></script>
+    <script>
+        const { createApp } = Vue;
+        const firebaseConfig = {
+            apiKey: "AIzaSyBA6z3KtW9-3XxqvvsudpSPOls0isD7xx8",
+            authDomain: "lax-scoreboard.firebaseapp.com",
+            databaseURL: "https://lax-scoreboard-default-rtdb.firebaseio.com",
+            projectId: "lax-scoreboard",
+            storageBucket: "lax-scoreboard.firebasestorage.app",
+            messagingSenderId: "560143102921",
+            appId: "1:560143102921:web:6e3a5d98726cecceeeae18"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        createApp({
+            data() {
+                return {
+                    score: { home: 0, away: 0 },
+                    timeouts: { home: 2, away: 2 },
+                    gameClock: 720,
+                    shotClock: 80,
+                    isClockRunning: false,
+                    clockInterval: null,
+                    quarter: 1,
+                    playerStats: [],
+                    newPlayerStat: {
+                        player: '',
+                        team: 'home',
+                        type: 'goal',
+                    },
+                    home: "Home",
+                    away: "Away"
+                };
+            },
+            created() {
+                firebase.database().ref("/scoreboard").on("value", (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        this.score = data.score;
+                        this.timeouts = data.timeouts;
+                        this.gameClock = data.gameClock;
+                        this.shotClock = data.shotClock;
+                        this.isClockRunning = data.isClockRunning;
+                        this.quarter = data.quarter;
+                        this.playerStats = data.playerStats;
+                        this.home = data.home;
+                        this.away = data.away;
+                    }
+                    
+                    // Handle player stats if stats are cleared
+                    if (this.playerStats) this.playerStats = JSON.parse(this.playerStats)
+                    else this.playerStats = [];
+                });
+            },
+            computed: {
+                clockStatus() {
+                    return this.clockInterval ? 'Stop' : 'Start';
+                }
+            },
+            methods: {
+                toggleMode() {
+                    this.isControllerMode = !this.isControllerMode;
+                },
+                updateFirebase() {
+                    firebase.database().ref("/scoreboard").update({
+                        playerStats: JSON.stringify(this.playerStats),
+                    });
+                },
+                formatTime(sec) {
+                    const m = String(Math.floor(sec / 60)).padStart(2, '0');
+                    const s = String(sec % 60).padStart(2, '0');
+                    return `${m}:${s}`;
+                    this.updateFirebase();
+                },
+                addPlayerStat() {
+                    console.log(this.playerStats)
+                    const p = { ...this.newPlayerStat };
+                    p.quarter = this.quarter;
+                    p.gameClock = this.gameClock;
+                    this.playerStats.push(p);
+                    this.updateFirebase();
+                },
+                removePlayerStat(index) {
+                    this.playerStats.splice(index, 1);
+                    this.updateFirebase();
+                },
+                clearPlayerStat() {
+                    this.playerStats = [];
+                    this.updateFirebase();
+                },
+                exportData() {
+                    const data = {
+                        score: this.score,
+                        timeouts: this.timeouts,
+                        gameClock: this.gameClock,
+                        shotClock: this.shotClock,
+                        isClockRunning: this.isClockRunning,
+                        clockInterval: this.clockInterval,
+                        quarter: this.quarter,
+                        playerStats: this.playerStats,
+                        home: this.home,
+                        away: this.away
+                    }
+
+                    const jsonData = JSON.stringify(data, null, 2);
+                    const blob = new Blob([jsonData], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'game_data.json';
+                    link.click();
+                    URL.revokeObjectURL(url);
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>

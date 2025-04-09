@@ -31,13 +31,16 @@
 
 
         .clock-display {
-            font-size: 5rem;
+            font-size: 8rem;
             font-weight: 700;
         }
 
-        .shot-clock-seconds {
+        .side-clock-display {
             font-size: 6rem;
             font-weight: bold;
+        }
+
+        .shot-clock-seconds {    
             color: #dc3545;
         }
 
@@ -96,7 +99,7 @@
         <div class="row sticky-topbar text-center mb-4">
             <div class="col-4">
                 <div>Quarter</div>
-                <div class="clock-display">{{ quarter }}</div>
+                <div class="side-clock-display">{{ quarter }}</div>
             </div>
             <div class="col-4">
                 <div>Game Clock</div>
@@ -106,7 +109,7 @@
             </div>
             <div class="col-4">
                 <div>Shot Clock</div>
-                <div class="shot-clock-seconds">
+                <div class="shot-clock-seconds side-clock-display">
                     <span>{{ shotClock }}</span>
                 </div>
             </div>
@@ -190,23 +193,10 @@
                 });
             },
             methods: {
-                updateFirebase() {
-                    firebase.database().ref("/scoreboard").set({
-                        score: this.score,
-                        timeouts: this.timeouts,
-                        gameClock: this.gameClock,
-                        shotClock: this.shotClock,
-                        isClockRunning: this.isClockRunning,
-                        quarter: this.quarter,
-                        home: this.home,
-                        away: this.away,
-                    });
-                },
                 formatTime(sec) {
                     const m = String(Math.floor(sec / 60)).padStart(2, '0');
                     const s = String(sec % 60).padStart(2, '0');
                     return `${m}:${s}`;
-                    this.updateFirebase();
                 },
                 checkPenalties() {
                     const remaining = [];
