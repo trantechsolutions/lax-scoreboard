@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Lacrosse Scoreboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        h2,
+        h4 {
+            font-size: 2rem;
+        }
+
+        .score-display {
+            font-size: 5rem;
+            font-weight: bold;
+            background-color: #212529;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 1rem;
+            box-shadow: inset 0 -4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+
+        .clock-display {
+            font-size: 5rem;
+            font-weight: 700;
+        }
+
+        .shot-clock-seconds {
+            font-size: 6rem;
+            font-weight: bold;
+            color: #dc3545;
+        }
+
+        .sticky-topbar {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 1000;
+            padding: 1rem 0;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .penalty-badge {
+            font-size: 0.9rem;
+        }
+
+        .editable {
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .penalty-form {
+            padding: 1rem;
+            background-color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+
+        .penalty-form .form-control {
+            margin-bottom: 10px;
+        }
+
+        .penalty-form .btn {
+            width: 100%;
+        }
+
+        .penalty-header {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .penalty-badge {
+            margin-left: 10px;
+        }
+
+        .toggle-btn {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" class="container-fluid py-3">
+
+        <!-- Sticky Header for Game Clock and Quarter -->
+        <div class="row sticky-topbar text-center mb-4">
+            <div class="col-4">
+                <div>Quarter</div>
+                <div class="clock-display">{{ quarter }}</div>
+            </div>
+            <div class="col-4">
+                <div>Game Clock</div>
+                <div class="clock-display">
+                    <span v-if="!isClockRunning" class="editable" @click="isControllerMode ? editClock('gameClock') : null">{{ formatTime(gameClock) }}</span>
+                    <span v-else>{{ formatTime(gameClock) }}</span>
+                </div>
+            </div>
+            <div class="col-4">
+                <div>Shot Clock</div>
+                <div class="shot-clock-seconds">
+                    <span v-if="!isClockRunning" class="editable" @click="isControllerMode ? editClock('shotClock') : null">{{ shotClock }}</span>
+                    <span v-else>{{ shotClock }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Score and Penalties Section -->
+        <div class="row text-center align-items-start mb-4">
+            <!-- Home Team -->
+            <div class="col-6 border-end">
+                <h4><i class="bi bi-house-fill me-2"></i>
+                    <span v-if="!isClockRunning" class="editable" @click="isControllerMode ? editName('home') : null">{{ home }}</span>
+                    <span v-else>{{ home }}</span>
+                </h4>
+                <div class="score-display bg-dark text-white rounded py-3 mb-3">{{ score.home }}</div>
+                <div class="btn-group mb-2">
+                    <button class="btn btn-danger btn-lg" @click="adjustScore('home', -1)">
+                        <i class="bi bi-dash-circle"></i>
+                    </button>
+                    <button class="btn btn-success btn-lg" @click="adjustScore('home', 1)">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+                </div>
+                <div class="mb-2"><i class="bi bi-hourglass-split me-1"></i>Timeouts: {{ timeouts.home }}</div>
+                <div class="btn-group mb-3">
+                    <button class="btn btn-outline-secondary btn-sm" @click="adjustTimeout('home', -1)">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" @click="adjustTimeout('home', 1)">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>Penalties</h6>
+                <ul class="list-group">
+                    <li v-for="(p, i) in activePenalties.filter(p => p.team === 'home')" :key="i"
+                        class="list-group-item d-flex justify-content-between align-items-center">
+                        #{{ p.player }} - {{ p.category }} ({{ p.remaining }}s left)
+                        <span v-if="p.releasable" class="badge bg-success penalty-badge">Releasable</span>
+                        <button class="btn btn-sm btn-outline-danger" @click="removePenalty(i)">X</button>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Away Team -->
+            <div class="col-6">
+                <h4><i class="bi bi-house-fill me-2"></i>
+                    <span v-if="!isClockRunning && isControllerMode" class="editable" @click="isControllerMode ? editName('away') : null">{{ away }}</span>
+                    <span v-else>{{ away }}</span>
+                </h4>
+                <div class="score-display bg-dark text-white rounded py-3 mb-3">{{ score.away }}</div>
+                <div class="btn-group mb-2">
+                    <button class="btn btn-danger btn-lg" @click="adjustScore('away', -1)">
+                        <i class="bi bi-dash-circle"></i>
+                    </button>
+                    <button class="btn btn-success btn-lg" @click="adjustScore('away', 1)">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+                </div>
+                <div class="mb-2"><i class="bi bi-hourglass-split me-1"></i>Timeouts: {{ timeouts.away }}</div>
+                <div class="btn-group mb-3">
+                    <button class="btn btn-outline-secondary btn-sm" @click="adjustTimeout('away', -1)">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" @click="adjustTimeout('away', 1)">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+                <h6><i class="bi bi-exclamation-triangle me-2"></i>Penalties</h6>
+                <ul class="list-group">
+                    <li v-for="(p, i) in activePenalties.filter(p => p.team === 'away')" :key="i"
+                        class="list-group-item d-flex justify-content-between align-items-center">
+                        #{{ p.player }} - {{ p.category }} ({{ p.remaining }}s left)
+                        <span v-if="p.releasable" class="badge bg-success penalty-badge">Releasable</span>
+                        <button class="btn btn-sm btn-outline-danger" @click="removePenalty(i)">X</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Clock Controls -->
+        <div class="text-center mb-4">
+            <button class="btn btn-primary btn-lg mx-2" @click="toggleClocks">
+                <i :class="isClockRunning ? 'bi bi-pause-fill' : 'bi bi-play-fill'" class="me-1"></i>
+                {{ clockStatus }}
+            </button>
+            <button class="btn btn-warning btn-lg mx-2" @click="resetClock('shotClock')">
+                <i class="bi bi-arrow-clockwise me-1"></i>Reset Shot
+            </button>
+            <button class="btn btn-danger btn-lg mx-2" @click="resetClock('gameClock')">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Game
+            </button>
+        </div>
+
+
+        <!-- Quarter Control -->
+        <div class="text-center mb-4">
+            <button class="btn btn-outline-dark me-2" @click="adjustQuarter(-1)">Quarter -</button>
+            <button class="btn btn-outline-dark" @click="adjustQuarter(1)">Quarter +</button>
+        </div>
+
+        <!-- Add Penalty -->
+        <div class="penalty-form mb-4">
+            <h4 class="penalty-header text-center">Add Penalty</h4>
+            <div class="row g-2">
+                <div class="col-2">
+                    <div class="btn-group w-100">
+                        <button class="btn btn-outline-primary" :class="{active: newPenalty.team === 'home'}"
+                            @click="newPenalty.team = 'home'">Home</button>
+                        <button class="btn btn-outline-primary" :class="{active: newPenalty.team === 'away'}"
+                            @click="newPenalty.team = 'away'">Away</button>
+                    </div>
+                </div>
+                <div class="col-2">
+                    <input type="text" class="form-control" v-model="newPenalty.player" placeholder="Player #" />
+                </div>
+                <div class="col-3">
+                    <div class="btn-group w-100">
+                        <button class="btn btn-outline-danger" :class="{active: newPenalty.duration === 30}"
+                            @click="newPenalty.duration = 30">30s</button>
+                        <button class="btn btn-outline-danger" :class="{active: newPenalty.duration === 60}"
+                            @click="newPenalty.duration = 60">{{ formatTime(60) }}</button>
+                        <button class="btn btn-outline-danger" :class="{active: newPenalty.duration === 120}"
+                            @click="newPenalty.duration = 120">{{ formatTime(120) }}</button>
+                    </div>
+                </div>
+                <div class="col-3">
+                    <input type="text" class="form-control" v-model="newPenalty.category" placeholder="Category" />
+                </div>
+                <div class="col-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" v-model="newPenalty.releasable" />
+                        <label class="form-check-label">Releasable</label>
+                    </div>
+                </div>
+                <div class="col-2">
+                    <button class="btn btn-outline-primary w-100" @click="addPenalty">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expired Penalties -->
+        <div>
+            <h5 class="text-center">Expired Penalties</h5>
+            <ul class="list-group">
+                <li v-for="(p, i) in expiredPenalties" :key="i" class="list-group-item">
+                    {{ p.team }} - #{{ p.player }} | {{ p.category }} | Start: {{ formatTime(p.startGameClock) }} | End:
+                    {{ formatTime(p.endGameClock) }}
+                </li>
+            </ul>
+        </div>
+
+    </div>
+
+    <script src="https://unpkg.com/vue@3.2.45/dist/vue.global.prod.js"></script>
+    <script>
+        const { createApp } = Vue;
+        const firebaseConfig = {
+            apiKey: "AIzaSyBA6z3KtW9-3XxqvvsudpSPOls0isD7xx8",
+            authDomain: "lax-scoreboard.firebaseapp.com",
+            databaseURL: "https://lax-scoreboard-default-rtdb.firebaseio.com",
+            projectId: "lax-scoreboard",
+            storageBucket: "lax-scoreboard.firebasestorage.app",
+            messagingSenderId: "560143102921",
+            appId: "1:560143102921:web:6e3a5d98726cecceeeae18"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        createApp({
+            data() {
+                return {
+                    score: { home: 0, away: 0 },
+                    timeouts: { home: 2, away: 2 },
+                    gameClock: 720,
+                    shotClock: 80,
+                    isClockRunning: false,
+                    clockInterval: null,
+                    quarter: 1,
+                    activePenalties: [],
+                    expiredPenalties: [],
+                    newPenalty: {
+                        team: 'home',
+                        player: '',
+                        duration: 30,
+                        category: '',
+                        releasable: true
+                    },
+                    home: "Home",
+                    away: "Away"
+                };
+            },
+            created() {
+                firebase.database().ref("/scoreboard").on("value", (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        this.score = data.score;
+                        this.timeouts = data.timeouts;
+                        this.gameClock = data.gameClock;
+                        this.shotClock = data.shotClock;
+                        this.isClockRunning = data.isClockRunning;
+                        this.quarter = data.quarter;
+                        this.home = data.home;
+                        this.away = data.away;
+                    }
+                });
+            },
+            computed: {
+                clockStatus() {
+                    return this.clockInterval ? 'Stop' : 'Start';
+                }
+            },
+            methods: {
+                toggleMode() {
+                    this.isControllerMode = !this.isControllerMode;
+                },
+                updateFirebase() {
+                    firebase.database().ref("/scoreboard").set({
+                        score: this.score,
+                        timeouts: this.timeouts,
+                        gameClock: this.gameClock,
+                        shotClock: this.shotClock,
+                        isClockRunning: this.isClockRunning,
+                        quarter: this.quarter,
+                        home: this.home,
+                        away: this.away,
+                    });
+                },
+                toggleClocks() {
+                    if (this.clockInterval) {
+                        clearInterval(this.clockInterval);
+                        this.clockInterval = null;
+                        this.isClockRunning = false;
+                    } else {
+                        this.clockInterval = setInterval(() => {
+                            if (this.shotClock > 0) {
+                                this.shotClock--;
+                            } else {
+                                // Shot clock expired — stop everything
+                                clearInterval(this.clockInterval);
+                                this.clockInterval = null;
+                                this.isClockRunning = false;
+                                return;
+                            }
+
+                            if (this.gameClock > 0) {
+                                this.gameClock--;
+                                this.updateFirebase();
+                            }
+                            this.checkPenalties();
+                            this.updateFirebase();
+                        }, 1000);
+                        this.isClockRunning = true;
+                        this.updateFirebase();
+                    }
+                },
+                formatTime(sec) {
+                    const m = String(Math.floor(sec / 60)).padStart(2, '0');
+                    const s = String(sec % 60).padStart(2, '0');
+                    return `${m}:${s}`;
+                    this.updateFirebase();
+                },
+                resetClock(type) {
+                    if (type == "shotClock") this.shotClock = 80;
+                    else if (type == "gameClock") this.gameClock = 720;
+                    this.updateFirebase();
+                },
+                adjustScore(team, amount) {
+                    this.score[team] = Math.max(0, this.score[team] + amount);
+                    this.updateFirebase();
+                },
+                adjustTimeout(team, amount) {
+                    this.timeouts[team] = Math.max(0, Math.min(2, this.timeouts[team] + amount));
+                    this.updateFirebase();
+                },
+                adjustQuarter(amount) {
+                    this.quarter = Math.max(1, Math.min(4, this.quarter + amount));
+                    this.updateFirebase();
+                },
+                addPenalty() {
+                    const p = { ...this.newPenalty };
+                    p.startGameClock = this.gameClock;
+                    p.remaining = p.duration;
+                    p.endGameClock = this.gameClock - p.duration;
+                    this.activePenalties.push(p);
+                    this.newPenalty = {
+                        team: 'home',
+                        player: '',
+                        duration: 30,
+                        category: '',
+                        releasable: true
+                    };
+                },
+                removePenalty(index) {
+                    this.activePenalties.splice(index, 1);
+                },
+                checkPenalties() {
+                    const remaining = [];
+                    for (const p of this.activePenalties) {
+                        p.remaining--;
+                        if (p.remaining <= 0) {
+                            this.expiredPenalties.push({ ...p });
+                        } else {
+                            remaining.push(p);
+                        }
+                    }
+                    this.activePenalties = remaining;
+                },
+                editClock(type) {
+                    const input = prompt(`Set ${type === 'gameClock' ? 'Game' : 'Shot'} Clock (in seconds):`, this[type]);
+                    const value = parseInt(input);
+                    if (!isNaN(value)) {
+                        this[type] = value;
+                    }
+                    this.updateFirebase();
+                },
+                editName(type) {
+                    const input = prompt(`Set ${type === 'home' ? 'Home' : 'Away'} Team Name:`, this[type]);
+                    console.log(input)
+                    this[type] = input;
+                    this.updateFirebase();
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>
